@@ -26,6 +26,16 @@ services:
       - postgres
     restart: unless-stopped
 
+  rabbitmq:
+    image: rabbitmq:management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: mikelopster
+      RABBITMQ_DEFAULT_PASS: password
+    ports:
+      - '15672:15672'
+      - '5672:5672'
+    restart: always
+
   # order-service:
   #   image: taotoxicboy/go-order-service:0.4.3
   #   ports:

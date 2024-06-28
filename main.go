@@ -7,7 +7,6 @@ import (
 	"order-server/domain"
 	"order-server/gRPC"
 	"order-server/services"
-	"time"
 
 	"github.com/robfig/cron/v3"
 	"google.golang.org/grpc"
@@ -48,11 +47,11 @@ func main() {
 	}()
 
 	c := cron.New(cron.WithSeconds())
-	c.AddFunc("0 */5 * * * *", func() {
-		// c.AddFunc("*/5 * * * * *", func() {
-		time.Sleep(5 * time.Second)
-		orderServer.(*services.OrderServer).ProcessOrder()
-	})
+	// c.AddFunc("0 */5 * * * *", func() {
+	// 	// c.AddFunc("*/5 * * * * *", func() {
+	// 	time.Sleep(5 * time.Second)
+	// 	orderServer.(*services.OrderServer).ProcessOrder()
+	// })
 
 	// Start the cron scheduler
 	c.Start()
@@ -61,4 +60,8 @@ func main() {
 
 	// Wait indefinitely
 	select {}
+}
+
+func NewOrderProducer() {
+	panic("unimplemented")
 }

@@ -36,6 +36,8 @@ func (s *OrderServer) CreateOrder(ctx context.Context, req *gRPC.OrdersDto) (*gR
 
 func (s *OrderServer) ProcessOrder() {
 	signalService := NewSignalService(s.levelDB)
+	producer := NewOrderProducer()
+
 	fmt.Println("Cron job running at", time.Now())
 	orders, err := s.groupOrder()
 	if err != nil {
@@ -56,7 +58,10 @@ func (s *OrderServer) ProcessOrder() {
 					item.Symbol,
 				)
 				SendLineNotify(msg)
+
 				// send order to queue
+				producer.orderProducer("orders", "")
+
 			}
 		} else if item.Type == "CDC" {
 			position, err := signalService.signalCDC(item.Symbol, item.Timeframe)
@@ -71,7 +76,9 @@ func (s *OrderServer) ProcessOrder() {
 					item.Symbol,
 				)
 				SendLineNotify(msg)
+
 				// send order to queue
+				producer.orderProducer("orders", "")
 			}
 		}
 	}
