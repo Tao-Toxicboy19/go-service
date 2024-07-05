@@ -12,6 +12,7 @@ import (
 	"order-server/producer"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -28,8 +29,50 @@ func NewOrderServer(db *gorm.DB, levelDB *LevelDBService) gRPC.OrdersServiceServ
 	}
 }
 
+// s.ProcessOrder()
+// producer := producer.NewOrderProducer()
+// producer.OrderProducer("orders","Hello orders")
+type symbol struct {
+	Symbol string
+}
+
 func (s *OrderServer) CreateOrder(ctx context.Context, req *gRPC.OrdersDto) (*gRPC.OrderResponse, error) {
-	s.ProcessOrder()
+	var symbol []*symbol
+
+	query := s.db.Model(&domain.Orders{}).
+		Where("user_id = ? AND symbol = ? AND deleted_at IS NULL", req.UserId, req.Symbol).
+		Select("symbol")
+
+	err := query.Scan(&symbol).Error
+	if err != nil {
+		return nil, err
+	}
+
+	if len(symbol) != 0 {
+		return &gRPC.OrderResponse{
+			Message:    "You've got the symbol.",
+			StatusCode: 400,
+		}, nil
+	}
+
+	order := domain.Orders{
+		ID:        uuid.New().String(),
+		Symbol:    req.Symbol,
+		Leverage:  int64(req.Leverage),
+		Quantity:  int64(req.Quantity),
+		Timeframe: req.Timeframe,
+		Type:      req.Type,
+		UserId:    req.UserId,
+	}
+
+	if req.Ema != nil {
+		emaValue := int64(*req.Ema)
+		order.Ema = &emaValue
+	}
+
+	if err := s.db.Create(&order).Error; err != nil {
+		return nil, fmt.Errorf("failed to create order: %v", err)
+	}
 
 	return &gRPC.OrderResponse{
 		Message:    "Order created successfully",
@@ -62,7 +105,7 @@ func (s *OrderServer) ProcessOrder() {
 				)
 				SendLineNotify(msg)
 				s.queryOrder(item.Symbol, item.Type, item.Ema)
-				
+
 				order, err := s.queryOrder(item.Symbol, item.Type)
 				if err != nil {
 					return

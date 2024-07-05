@@ -3,6 +3,7 @@ package producer
 import (
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/joho/godotenv"
 	"github.com/streadway/amqp"
@@ -18,11 +19,13 @@ func (o *orderProducer) OrderProducer(queue, msg string) {
 	// Load environment variables from .env file
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatalf("failed to loading .env file: %v", err)
+		log.Fatalf("failed to load .env file: %v", err)
 	}
 
+	rabbit_url := os.Getenv("RABBITMQ_URL")
+
 	// เชื่อมต่อกับ RabbitMQ server
-	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	conn, err := amqp.Dial(rabbit_url)
 	if err != nil {
 		log.Fatalf("failed to connect to RabbitMQ: %v", err)
 	}
@@ -38,7 +41,7 @@ func (o *orderProducer) OrderProducer(queue, msg string) {
 	// ประกาศ queue ที่จะส่งข้อมูลไป
 	q, err := ch.QueueDeclare(
 		queue, // ชื่อของ queue
-		false, // durable
+		true,  // durable
 		false, // delete when unused
 		false, // exclusive
 		false, // no-wait
