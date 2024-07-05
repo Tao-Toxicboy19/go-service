@@ -112,13 +112,6 @@ func (s *SignalService) signalEMA(symbol, timeframe string, ema int) (*Position,
 		return nil, err
 	}
 
-	// currEMA, err := s.calculateEMA(result, ema)
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	// fmt.Println(symbol,"from EMA")
-
 	prevEMA, err := s.calculateEMA(result[:len(result)-1], ema)
 	if err != nil {
 		return nil, err

@@ -3,10 +3,13 @@ package services
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"order-server/domain"
 	"order-server/gRPC"
+	"order-server/producer"
 	"time"
 
 	"gorm.io/gorm"
@@ -36,7 +39,7 @@ func (s *OrderServer) CreateOrder(ctx context.Context, req *gRPC.OrdersDto) (*gR
 
 func (s *OrderServer) ProcessOrder() {
 	signalService := NewSignalService(s.levelDB)
-	producer := NewOrderProducer()
+	producer := producer.NewOrderProducer()
 
 	fmt.Println("Cron job running at", time.Now())
 	orders, err := s.groupOrder()
@@ -58,9 +61,15 @@ func (s *OrderServer) ProcessOrder() {
 					item.Symbol,
 				)
 				SendLineNotify(msg)
+				s.queryOrder(item.Symbol, item.Type, item.Ema)
+				
+				order, err := s.queryOrder(item.Symbol, item.Type)
+				if err != nil {
+					return
+				}
 
 				// send order to queue
-				producer.orderProducer("orders", "")
+				producer.OrderProducer("orders", *order)
 
 			}
 		} else if item.Type == "CDC" {
@@ -76,12 +85,50 @@ func (s *OrderServer) ProcessOrder() {
 					item.Symbol,
 				)
 				SendLineNotify(msg)
+				order, err := s.queryOrder(item.Symbol, item.Type)
+				if err != nil {
+					return
+				}
 
 				// send order to queue
-				producer.orderProducer("orders", "")
+				producer.OrderProducer("orders", *order)
 			}
 		}
 	}
+}
+
+type orders struct {
+	Id       string
+	Symbol   string
+	Quantity int
+	Leverage int
+	Ema      int
+	UserId   string
+}
+
+func (s *OrderServer) queryOrder(symbol, types string, ema ...int) (*string, error) {
+	var order []*orders
+
+	query := s.db.Model(&domain.Orders{}).
+		Where("symbol = ? AND type = ? AND deleted_at IS NULL", symbol, types).
+		Select("symbol, quantity, leverage, ema, user_id")
+
+	if len(ema) > 0 {
+		query = query.Where("ema = ?", ema[0])
+	}
+
+	err := query.Scan(&order).Error
+	if err != nil {
+		return nil, err
+	}
+	result, err := json.Marshal(order)
+	if err != nil {
+		return nil, err
+	}
+
+	orders := string(result)
+
+	return &orders, nil
 }
 
 type order struct {
@@ -92,55 +139,20 @@ type order struct {
 }
 
 func (s *OrderServer) groupOrder() ([]*order, error) {
-	orders := []*order{
-		{
-			Symbol:    "ETHUSDT",
-			Ema:       15,
-			Timeframe: "5m",
-			Type:      "EMA",
-		},
-		{
-			Symbol:    "BTCUSDT",
-			Timeframe: "5m",
-			Type:      "CDC",
-		},
-		{
-			Symbol:    "DOGEUSDT",
-			Timeframe: "5m",
-			Ema:       15,
-			Type:      "EMA",
-		},
-		{
-			Symbol:    "XRPUSDT",
-			Timeframe: "5m",
-			Type:      "CDC",
-		},
-		{
-			Symbol:    "ADAUSDT",
-			Timeframe: "5m",
-			Ema:       15,
-			Type:      "EMA",
-		},
-		{
-			Symbol:    "BNBUSDT",
-			Timeframe: "5m",
-			Ema:       15,
-			Type:      "EMA",
-		},
-	}
+	var orders []*order
 	// // ทำ Group By และเลือกคอลัมน์ที่ต้องการ
-	// err := s.db.Model(&domain.Orders{}).
-	// 	Select("symbol, ema, timeframe, type").
-	// 	Group("symbol, ema, timeframe, type").
-	// 	Scan(&orders).Error
+	err := s.db.Model(&domain.Orders{}).
+		Select("symbol, ema, timeframe, type").
+		Group("symbol, ema, timeframe, type").
+		Scan(&orders).Error
 
-	// if err != nil {
-	// 	return nil, err
-	// }
+	if err != nil {
+		return nil, err
+	}
 
-	// if len(orders) == 0 {
-	// 	return nil, fmt.Errorf("not found orders")
-	// }
+	if len(orders) == 0 {
+		return nil, fmt.Errorf("not found orders")
+	}
 
 	return orders, nil
 }

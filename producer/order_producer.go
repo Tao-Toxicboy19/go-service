@@ -1,4 +1,4 @@
-package services
+package producer
 
 import (
 	"fmt"
@@ -14,7 +14,7 @@ func NewOrderProducer() *orderProducer {
 	return &orderProducer{}
 }
 
-func (o *orderProducer) orderProducer(queue, msg string) {
+func (o *orderProducer) OrderProducer(queue, msg string) {
 	// Load environment variables from .env file
 	err := godotenv.Load()
 	if err != nil {

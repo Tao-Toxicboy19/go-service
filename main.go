@@ -61,7 +61,3 @@ func main() {
 	// Wait indefinitely
 	select {}
 }
-
-func NewOrderProducer() {
-	panic("unimplemented")
-}
