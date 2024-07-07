@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/grpc/status"
 	"gorm.io/gorm"
 )
 
@@ -32,29 +33,35 @@ func NewOrderServer(db *gorm.DB, levelDB *LevelDBService) gRPC.OrdersServiceServ
 // s.ProcessOrder()
 // producer := producer.NewOrderProducer()
 // producer.OrderProducer("orders","Hello orders")
-type symbol struct {
-	Symbol string
-}
 
 func (s *OrderServer) CreateOrder(ctx context.Context, req *gRPC.OrdersDto) (*gRPC.OrderResponse, error) {
-	var symbol []*symbol
+	var existingSymbol domain.Orders
 
-	query := s.db.Model(&domain.Orders{}).
+	// Start a new transaction
+	tx := s.db.Begin()
+	if tx.Error != nil {
+		return nil, status.Errorf(500, "failed to start transaction: %v", tx.Error)
+	}
+
+	// Check if the symbol already exists for the user
+	err := tx.Model(&domain.Orders{}).
 		Where("user_id = ? AND symbol = ? AND deleted_at IS NULL", req.UserId, req.Symbol).
-		Select("symbol")
+		Select("symbol").
+		First(&existingSymbol).Error
 
-	err := query.Scan(&symbol).Error
-	if err != nil {
-		return nil, err
+	// Handle database query error
+	if err != nil && err != gorm.ErrRecordNotFound {
+		tx.Rollback()
+		return nil, status.Errorf(400, "database query error: %v", err)
 	}
 
-	if len(symbol) != 0 {
-		return &gRPC.OrderResponse{
-			Message:    "You've got the symbol.",
-			StatusCode: 400,
-		}, nil
+	// If the symbol exists, return an error with gRPC status
+	if err == nil {
+		tx.Rollback()
+		return nil, status.Errorf(409, "Symbol '%s' already exists for user %s", req.Symbol, req.UserId)
 	}
 
+	// Prepare the new order
 	order := domain.Orders{
 		ID:        uuid.New().String(),
 		Symbol:    req.Symbol,
@@ -65,15 +72,24 @@ func (s *OrderServer) CreateOrder(ctx context.Context, req *gRPC.OrdersDto) (*gR
 		UserId:    req.UserId,
 	}
 
+	// Assign EMA value if provided
 	if req.Ema != nil {
 		emaValue := int64(*req.Ema)
 		order.Ema = &emaValue
 	}
 
-	if err := s.db.Create(&order).Error; err != nil {
-		return nil, fmt.Errorf("failed to create order: %v", err)
+	// Create the order in the database
+	if err := tx.Create(&order).Error; err != nil {
+		tx.Rollback()
+		return nil, status.Errorf(500, "failed to create order: %v", err)
 	}
 
+	// Commit the transaction
+	if err := tx.Commit().Error; err != nil {
+		return nil, status.Errorf(500, "failed to commit transaction: %v", err)
+	}
+
+	// Return successful response
 	return &gRPC.OrderResponse{
 		Message:    "Order created successfully",
 		StatusCode: 200,
@@ -140,17 +156,8 @@ func (s *OrderServer) ProcessOrder() {
 	}
 }
 
-type orders struct {
-	Id       string
-	Symbol   string
-	Quantity int
-	Leverage int
-	Ema      int
-	UserId   string
-}
-
 func (s *OrderServer) queryOrder(symbol, types string, ema ...int) (*string, error) {
-	var order []*orders
+	var orders []domain.Orders
 
 	query := s.db.Model(&domain.Orders{}).
 		Where("symbol = ? AND type = ? AND deleted_at IS NULL", symbol, types).
@@ -160,18 +167,19 @@ func (s *OrderServer) queryOrder(symbol, types string, ema ...int) (*string, err
 		query = query.Where("ema = ?", ema[0])
 	}
 
-	err := query.Scan(&order).Error
+	err := query.Find(&orders).Error
 	if err != nil {
-		return nil, err
-	}
-	result, err := json.Marshal(order)
-	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query error: %v", err)
 	}
 
-	orders := string(result)
+	result, err := json.Marshal(orders)
+	if err != nil {
+		return nil, fmt.Errorf("JSON marshalling error: %v", err)
+	}
 
-	return &orders, nil
+	ordersStr := string(result)
+
+	return &ordersStr, nil
 }
 
 type order struct {
@@ -183,18 +191,19 @@ type order struct {
 
 func (s *OrderServer) groupOrder() ([]*order, error) {
 	var orders []*order
-	// // ทำ Group By และเลือกคอลัมน์ที่ต้องการ
+
+	// ทำ Group By และเลือกคอลัมน์ที่ต้องการ
 	err := s.db.Model(&domain.Orders{}).
 		Select("symbol, ema, timeframe, type").
 		Group("symbol, ema, timeframe, type").
-		Scan(&orders).Error
+		Find(&orders).Error
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to group orders: %v", err)
 	}
 
 	if len(orders) == 0 {
-		return nil, fmt.Errorf("not found orders")
+		return nil, fmt.Errorf("no orders found")
 	}
 
 	return orders, nil
