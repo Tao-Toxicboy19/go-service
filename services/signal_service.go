@@ -125,17 +125,23 @@ func (s *SignalService) signalEMA(symbol, timeframe string, ema int) (*Position,
 	fmt.Println(*posi.Position)
 
 	if prevEMA.ema > prevEMA.lastPrice {
+		fmt.Println("from level DB", *posi.Position)
+		SendLineNotify("hello Long")
 		s.updatePosition(symbol, "Short", "EMA", key)
 		if posi.Position != nil && *posi.Position == "Long" {
 			return &Position{
-				position: "Long",
+				position: "Short",
+				// position: "Long",
 			}, nil
 		}
 	} else if prevEMA.lastPrice > prevEMA.ema {
+		fmt.Println("from level DB", *posi.Position)
+		SendLineNotify("hello Short")
 		s.updatePosition(symbol, "Long", "EMA", key)
 		if posi.Position != nil && *posi.Position == "Short" {
 			return &Position{
-				position: "Short",
+				position: "Long",
+				// position: "Short",
 			}, nil
 		}
 	}

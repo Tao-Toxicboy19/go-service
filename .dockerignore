@@ -26,3 +26,5 @@ db
 docker-compose.debug.yml
 docker-compose.yaml
 Dockerfile
+build.sh
+go-run.sh

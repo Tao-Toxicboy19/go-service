@@ -12,6 +12,7 @@ type Orders struct {
 	CreatedAt time.Time  `gorm:"autoCreateTime"`
 	UpdatedAt time.Time  `gorm:"autoUpdateTime"`
 	DeletedAt *time.Time `gorm:"index"`
-	Leverage  int64      `gorm:"index:leverage_idx"` // เพิ่ม index ให้กับคอลัมน์ Leverage
-	UserId    string     `gorm:"index:user_id_idx"`  // เพิ่ม index ให้กับคอลัมน์ UserId
+	Leverage  int64      `gorm:"index:leverage_idx"`               // เพิ่ม index ให้กับคอลัมน์ Leverage
+	UserId    string     `json:"user_id" gorm:"index:user_id_idx"` // ระบุชื่อ key ใน JSON เป็น user_id
+	Status    *string
 }
