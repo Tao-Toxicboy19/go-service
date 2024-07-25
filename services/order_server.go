@@ -8,76 +8,71 @@ import (
 	"net/http"
 	"net/url"
 	"order-server/domain"
-	"order-server/gRPC"
+	"order-server/rabbitmq"
 
+	status "google.golang.org/grpc/status"
 	"gorm.io/gorm"
 )
 
 type OrderServer struct {
-	gRPC.UnimplementedOrdersServiceServer
+	UnimplementedOrdersServiceServer
 	db      *gorm.DB
 	levelDB *LevelDBService
 }
 
-func NewOrderServer(db *gorm.DB, levelDB *LevelDBService) gRPC.OrdersServiceServer {
+func NewOrderServer(db *gorm.DB, levelDB *LevelDBService) OrdersServiceServer {
 	return &OrderServer{
 		db:      db,
 		levelDB: levelDB,
 	}
 }
 
-// s.ProcessOrder()
-// producer := producer.NewSendMsg()
-// producer.SendMsg("orders","Hello orders")
+func (s *OrderServer) CreateOrder(ctx context.Context, req *OrdersDto) (*OrderResponse, error) {
+	var existingSymbol domain.Orders
+	var orderTxQueue = "order_tx_queue"
 
-func (s *OrderServer) CreateOrder(ctx context.Context, req *gRPC.OrdersDto) (*gRPC.OrderResponse, error) {
-	// var existingSymbol domain.Orders
-	// var orderTxQueue = "order_tx_queue"
+	producer := rabbitmq.NewOrderProducer()
 
-	// producer := rabbitmq.NewOrderProducer()
+	// Start a new transaction
+	tx := s.db.Begin()
+	if tx.Error != nil {
+		return nil, status.Errorf(500, "failed to start transaction: %v", tx.Error)
+	}
 
-	// // Start a new transaction
-	// tx := s.db.Begin()
-	// if tx.Error != nil {
-	// 	return nil, status.Errorf(500, "failed to start transaction: %v", tx.Error)
-	// }
+	// Check if the symbol already exists for the user
+	err := tx.Model(&domain.Orders{}).
+		Where("user_id = ? AND symbol = ? AND deleted_at IS NULL", req.UserId, req.Symbol).
+		Select("symbol").
+		First(&existingSymbol).Error
 
-	// // Check if the symbol already exists for the user
-	// err := tx.Model(&domain.Orders{}).
-	// 	Where("user_id = ? AND symbol = ? AND deleted_at IS NULL", req.UserId, req.Symbol).
-	// 	Select("symbol").
-	// 	First(&existingSymbol).Error
+	// Handle database query error
+	if err != nil && err != gorm.ErrRecordNotFound {
+		tx.Rollback()
+		return nil, status.Errorf(400, "database query error: %v", err)
+	}
 
-	// // Handle database query error
-	// if err != nil && err != gorm.ErrRecordNotFound {
-	// 	tx.Rollback()
-	// 	return nil, status.Errorf(400, "database query error: %v", err)
-	// }
+	// If the symbol exists, return an error with status
+	if err == nil {
+		tx.Rollback()
+		return nil, status.Errorf(409, "Symbol '%s' already exists for user %s", req.Symbol, req.UserId)
+	}
 
-	// // If the symbol exists, return an error with gRPC status
-	// if err == nil {
-	// 	tx.Rollback()
-	// 	return nil, status.Errorf(409, "Symbol '%s' already exists for user %s", req.Symbol, req.UserId)
-	// }
+	// convert to string
+	order, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("JSON marshalling error: %v", err)
+	}
 
-	// // convert to string
-	// order, err := json.Marshal(req)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("JSON marshalling error: %v", err)
-	// }
+	// send to msg to consumer
+	producer.SendMsg(orderTxQueue, string(order))
 
-	// // send to msg to consumer
-	// producer.SendMsg(orderTxQueue, string(order))
-
-	// // Commit the transaction
-	// if err := tx.Commit().Error; err != nil {
-	// 	return nil, status.Errorf(500, "failed to commit transaction: %v", err)
-	// }
-
-	s.ProcessOrder("5m")
+	// Commit the transaction
+	if err := tx.Commit().Error; err != nil {
+		return nil, status.Errorf(500, "failed to commit transaction: %v", err)
+	}
 
 	// Return successful response
-	return &gRPC.OrderResponse{
+	return &OrderResponse{
 		Message:    "Order created successfully",
 		StatusCode: 200,
 	}, nil
@@ -112,13 +107,12 @@ func (s *OrderServer) ProcessOrder(timeframe string) {
 						Order:    &order,
 					}
 
-					_, err := json.Marshal(orderWithPosition)
+					orderJSON, err := json.Marshal(orderWithPosition)
 					if err != nil {
 						return
 					}
 
-					// SendLineNotify(string(orderJSON))
-					SendLineNotify(position.position)
+					SendLineNotify(string(orderJSON))
 
 					// producer.SendMsg(orderFutureQueue, string(orderJSON))
 				}
@@ -142,13 +136,12 @@ func (s *OrderServer) ProcessOrder(timeframe string) {
 						Order:    &order,
 					}
 
-					_, err := json.Marshal(orderWithPosition)
+					orderJSON, err := json.Marshal(orderWithPosition)
 					if err != nil {
 						return
 					}
 
-					// SendLineNotify(string(orderJSON))
-					SendLineNotify(position.position)
+					SendLineNotify(string(orderJSON))
 
 					// producer.SendMsg(orderFutureQueue, string(orderJSON))
 				}

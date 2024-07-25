@@ -1,1 +1,4 @@
-docker build -t taotoxicboy/go-order-service:0.5.2 --platform linux/amd64 . && docker push taotoxicboy/go-order-service:0.5.2
+#! /bin/sh
+
+docker build -t taotoxicboy/go-order-service:$1 --platform linux/amd64 . && \
+    docker push taotoxicboy/go-order-service:$1

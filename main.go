@@ -5,15 +5,23 @@ import (
 	"log"
 	"net"
 	"order-server/domain"
-	"order-server/gRPC"
 	"order-server/services"
+	"os"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/robfig/cron/v3"
 	"google.golang.org/grpc"
 )
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		panic(err)
+	}
+
+	port := os.Getenv("PORT")
+
 	db, err := services.ConnectDB()
 	if err != nil {
 		log.Fatalf("failed to connect database: %v", err)
@@ -31,17 +39,17 @@ func main() {
 
 	s := grpc.NewServer()
 
-	listener, err := net.Listen("tcp", ":50051")
+	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		panic(err)
 	}
 
 	orderServer := services.NewOrderServer(db, levelDB)
 
-	gRPC.RegisterOrdersServiceServer(s, orderServer)
+	services.RegisterOrdersServiceServer(s, orderServer)
 
 	go func() {
-		fmt.Println("gRPC service listening on port 50051")
+		fmt.Println("gRPC service listening on port", port)
 		if err := s.Serve(listener); err != nil {
 			panic(err)
 		}
@@ -55,15 +63,15 @@ func main() {
 		orderServer.(*services.OrderServer).ProcessOrder("5m")
 	})
 
-	// c.AddFunc("0 */4 * * *", func() {
-	// 	time.Sleep(5 * time.Second)
-	// 	orderServer.(*services.OrderServer).ProcessOrder("4h")
-	// })
+	c.AddFunc("0 */4 * * *", func() {
+		time.Sleep(5 * time.Second)
+		orderServer.(*services.OrderServer).ProcessOrder("4h")
+	})
 
-	// c.AddFunc("0 7 * * *", func() {
-	// 	time.Sleep(5 * time.Second)
-	// 	orderServer.(*services.OrderServer).ProcessOrder("1d")
-	// })
+	c.AddFunc("0 7 * * *", func() {
+		time.Sleep(5 * time.Second)
+		orderServer.(*services.OrderServer).ProcessOrder("1d")
+	})
 
 	// Start the cron scheduler
 	c.Start()
