@@ -8,7 +8,7 @@ import (
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	// "gorm.io/gorm/logger"
 )
 
 func ConnectDB() (*gorm.DB, error) {
@@ -32,7 +32,7 @@ func ConnectDB() (*gorm.DB, error) {
 
 	// Connect to PostgreSQL database
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info), // Adjust log mode as needed
+		// Logger: logger.Default.LogMode(logger.Info), // Adjust log mode as needed
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect database: %w", err)

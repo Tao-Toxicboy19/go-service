@@ -2,86 +2,36 @@ package services
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"order-server/domain"
 	"order-server/rabbitmq"
 
-	status "google.golang.org/grpc/status"
+	// "order-server/rabbitmq"
+
 	"gorm.io/gorm"
 )
 
 type OrderServer struct {
-	UnimplementedOrdersServiceServer
 	db      *gorm.DB
 	levelDB *LevelDBService
 }
 
-func NewOrderServer(db *gorm.DB, levelDB *LevelDBService) OrdersServiceServer {
+func NewOrderServer(db *gorm.DB, levelDB *LevelDBService) *OrderServer {
 	return &OrderServer{
 		db:      db,
 		levelDB: levelDB,
 	}
 }
 
-func (s *OrderServer) CreateOrder(ctx context.Context, req *OrdersDto) (*OrderResponse, error) {
-	var existingSymbol domain.Orders
-	var orderTxQueue = "order_tx_queue"
-
-	producer := rabbitmq.NewOrderProducer()
-
-	// Start a new transaction
-	tx := s.db.Begin()
-	if tx.Error != nil {
-		return nil, status.Errorf(500, "failed to start transaction: %v", tx.Error)
-	}
-
-	// Check if the symbol already exists for the user
-	err := tx.Model(&domain.Orders{}).
-		Where("user_id = ? AND symbol = ? AND deleted_at IS NULL", req.UserId, req.Symbol).
-		Select("symbol").
-		First(&existingSymbol).Error
-
-	// Handle database query error
-	if err != nil && err != gorm.ErrRecordNotFound {
-		tx.Rollback()
-		return nil, status.Errorf(400, "database query error: %v", err)
-	}
-
-	// If the symbol exists, return an error with status
-	if err == nil {
-		tx.Rollback()
-		return nil, status.Errorf(409, "Symbol '%s' already exists for user %s", req.Symbol, req.UserId)
-	}
-
-	// convert to string
-	order, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("JSON marshalling error: %v", err)
-	}
-
-	// send to msg to consumer
-	producer.SendMsg(orderTxQueue, string(order))
-
-	// Commit the transaction
-	if err := tx.Commit().Error; err != nil {
-		return nil, status.Errorf(500, "failed to commit transaction: %v", err)
-	}
-
-	// Return successful response
-	return &OrderResponse{
-		Message:    "Order created successfully",
-		StatusCode: 200,
-	}, nil
-}
-
 func (s *OrderServer) ProcessOrder(timeframe string) {
 	signalService := NewSignalService(s.levelDB)
-	// producer := rabbitmq.NewOrderProducer()
-	// var orderFutureQueue = "order_future_queue"
+	producer := rabbitmq.NewOrderProducer()
+	var orderFutureQueue = "order_future_queue"
+	var closePositionQueue = "close_position_queue"
 
 	orders, err := s.groupOrder(timeframe)
 	if err != nil {
@@ -93,43 +43,23 @@ func (s *OrderServer) ProcessOrder(timeframe string) {
 			position, err := signalService.signalEMA(item.Symbol, item.Timeframe, item.Ema)
 			if err != nil {
 				fmt.Println(err)
-				return
+				continue
 			}
-			if position != nil {
-				result, err := s.queryOrder(item.Symbol, item.Type, item.Ema)
-				if err != nil {
-					return
-				}
 
-				for _, order := range *result {
-					orderWithPosition := positionOrders{
-						Position: position.position,
-						Order:    &order,
-					}
-
-					orderJSON, err := json.Marshal(orderWithPosition)
-					if err != nil {
-						return
-					}
-
-					SendLineNotify(string(orderJSON))
-
-					// producer.SendMsg(orderFutureQueue, string(orderJSON))
-				}
-			}
-		} else if item.Type == "CDC" {
-			position, err := signalService.signalCDC(item.Symbol, item.Timeframe)
+			result, err := s.queryOrder(item.Symbol, item.Type, item.Ema)
 			if err != nil {
 				fmt.Println(err)
-				return
+				continue // Skip to the next iteration of the loop
 			}
 
-			if position != nil {
-				result, err := s.queryOrder(item.Symbol, item.Type, item.Ema)
-				if err != nil {
-					return
-				}
+			status, err := s.queryPosition(item.Symbol, item.Ema)
+			if err != nil {
+				fmt.Println(err)
+				continue // Skip to the next iteration of the loop
+			}
 
+			if status.Status != "" && status.Status != position.position {
+				fmt.Println("hello world")
 				for _, order := range *result {
 					orderWithPosition := positionOrders{
 						Position: position.position,
@@ -138,21 +68,133 @@ func (s *OrderServer) ProcessOrder(timeframe string) {
 
 					orderJSON, err := json.Marshal(orderWithPosition)
 					if err != nil {
-						return
+						continue
 					}
 
-					SendLineNotify(string(orderJSON))
-
-					// producer.SendMsg(orderFutureQueue, string(orderJSON))
+					// send to queue close position
+					producer.SendTask(closePositionQueue, string(orderJSON))
 				}
+			}
+
+			if position == nil {
+				fmt.Println("position is nil")
+				continue // Skip to the next iteration of the loop
+			}
+
+			if position.position == "" {
+				fmt.Println("position.Position is empty")
+				continue // Skip to the next iteration of the loop
+			}
+
+			for _, order := range *result {
+				orderWithPosition := positionOrders{
+					Position: position.position,
+					Order:    &order,
+				}
+
+				orderJSON, err := json.Marshal(orderWithPosition)
+				if err != nil {
+					continue
+				}
+				SendLineNotify(string(orderJSON))
+
+				producer.SendTask(orderFutureQueue, string(orderJSON))
 			}
 		}
 	}
+
+	// for _, item := range orders {
+	// 	if item.Type == "EMA" {
+	// 		position, err := signalService.signalEMA(item.Symbol, item.Timeframe, item.Ema)
+	// 		if err != nil {
+	// 			fmt.Println(err)
+	// 			return
+	// 		}
+	// 		SendLineNotify(position.position)
+
+	// 		if position != nil {
+	// 			result, err := s.queryOrder(item.Symbol, item.Type, item.Ema)
+	// 			if err != nil {
+	// 				return
+	// 			}
+
+	// 			for _, order := range *result {
+	// 				orderWithPosition := positionOrders{
+	// 					Position: position.position,
+	// 					Order:    &order,
+	// 				}
+
+	// 				orderJSON, err := json.Marshal(orderWithPosition)
+	// 				if err != nil {
+	// 					return
+	// 				}
+	// 				producer.SendTask(orderFutureQueue, string(orderJSON))
+	// 			}
+	// 		}
+	// 	} else if item.Type == "CDC" {
+	// 		position, err := signalService.signalCDC(item.Symbol, item.Timeframe)
+	// 		if err != nil {
+	// 			fmt.Println(err)
+	// 			return
+	// 		}
+
+	// 		if position != nil {
+	// 			result, err := s.queryOrder(item.Symbol, item.Type, item.Ema)
+	// 			if err != nil {
+	// 				return
+	// 			}
+
+	// 			for _, order := range *result {
+	// 				orderWithPosition := positionOrders{
+	// 					Position: position.position,
+	// 					Order:    &order,
+	// 				}
+
+	// 				orderJSON, err := json.Marshal(orderWithPosition)
+	// 				if err != nil {
+	// 					return
+	// 				}
+
+	// 				producer.SendTask(orderFutureQueue, string(orderJSON))
+	// 			}
+	// 		}
+	// 	}
+	// }
 }
 
 type positionOrders struct {
 	Position string         `json:"position"`
 	Order    *domain.Orders `json:"order"`
+}
+
+type queryPosition struct {
+	Symbol string
+	Ema    int
+	Status string
+}
+
+func (s *OrderServer) queryPosition(symbol string, ema int) (*queryPosition, error) {
+	var order queryPosition
+
+	// ใช้ Subquery เพื่อให้ได้ผลลัพธ์ที่ไม่ซ้ำกัน
+	err := s.db.Raw(`
+		SELECT symbol, ema, status
+		FROM (
+			SELECT symbol, ema, status
+			FROM orders
+			WHERE symbol = ? AND ema = ?
+			GROUP BY symbol, ema, status
+		) AS subquery
+	`, symbol, ema).Scan(&order).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("no orders found")
+		}
+		return nil, fmt.Errorf("failed to query orders: %v", err)
+	}
+
+	return &order, nil
 }
 
 func (s *OrderServer) queryOrder(symbol, types string, ema ...int) (*[]domain.Orders, error) {

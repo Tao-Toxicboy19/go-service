@@ -15,7 +15,7 @@ func NewOrderProducer() *orderProducer {
 	return &orderProducer{}
 }
 
-func (o *orderProducer) SendMsg(queue, msg string) {
+func (o *orderProducer) SendTask(queue, msg string) {
 	// Load environment variables from .env file
 	err := godotenv.Load()
 	if err != nil {

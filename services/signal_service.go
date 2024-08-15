@@ -122,75 +122,75 @@ func (s *SignalService) signalEMA(symbol, timeframe string, ema int) (*Position,
 		return nil, err
 	}
 
-	fmt.Println(*posi.Position)
+	if posi == nil {
+		fmt.Println("posi is nil")
+		return nil, fmt.Errorf("posi is nil")
+	}
 
 	if prevEMA.ema > prevEMA.lastPrice {
-		fmt.Println("from level DB", *posi.Position)
-		SendLineNotify("hello Long")
 		s.updatePosition(symbol, "Short", "EMA", key)
-		if posi.Position != nil && *posi.Position == "Long" {
+		if *posi.Position == "Long" {
 			return &Position{
 				position: "Short",
-				// position: "Long",
 			}, nil
 		}
 	} else if prevEMA.lastPrice > prevEMA.ema {
-		fmt.Println("from level DB", *posi.Position)
-		SendLineNotify("hello Short")
 		s.updatePosition(symbol, "Long", "EMA", key)
-		if posi.Position != nil && *posi.Position == "Short" {
-			return &Position{
-				position: "Long",
-				// position: "Short",
-			}, nil
-		}
-	}
-	return nil, nil
-}
-
-func (s *SignalService) signalCDC(symbol, timeframe string) (*Position, error) {
-	key := fmt.Sprintf("%s/%s/CDC", symbol, timeframe)
-
-	limit := 52
-	result, err := fetch(symbol, timeframe, limit)
-	if err != nil {
-		return nil, err
-	}
-
-	ema12, err := s.calculateEMA(result, 12)
-	if err != nil {
-		return nil, err
-	}
-
-	ema26, err := s.calculateEMA(result, 26)
-	if err != nil {
-		return nil, err
-	}
-
-	posi, err := s.saveSymbol(symbol, key)
-	if err != nil {
-		return nil, err
-	}
-
-	//Short
-	if ema26.ema > ema12.ema {
-		s.updatePosition(symbol, "Long", "CDC", key)
-		if posi.Position != nil && *posi.Position == "Short" {
-			return &Position{
-				position: "Short",
-			}, nil
-		}
-	} else if ema12.ema > ema26.ema {
-		s.updatePosition(symbol, "Short", "CDC", key)
-		if posi.Position != nil && *posi.Position == "Long" {
+		if *posi.Position == "Short" {
 			return &Position{
 				position: "Long",
 			}, nil
 		}
 	}
-
 	return nil, nil
+	// return &Position{
+	// 	position: "Short",
+	// }, nil
 }
+
+// func (s *SignalService) signalCDC(symbol, timeframe string) (*Position, error) {
+// 	key := fmt.Sprintf("%s/%s/CDC", symbol, timeframe)
+
+// 	limit := 52
+// 	result, err := fetch(symbol, timeframe, limit)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	ema12, err := s.calculateEMA(result, 12)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	ema26, err := s.calculateEMA(result, 26)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	posi, err := s.saveSymbol(symbol, key)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	//Short
+// 	if ema26.ema > ema12.ema {
+// 		s.updatePosition(symbol, "Long", "CDC", key)
+// 		if posi.Position != nil && *posi.Position == "Short" {
+// 			return &Position{
+// 				position: "Short",
+// 			}, nil
+// 		}
+// 	} else if ema12.ema > ema26.ema {
+// 		s.updatePosition(symbol, "Short", "CDC", key)
+// 		if posi.Position != nil && *posi.Position == "Long" {
+// 			return &Position{
+// 				position: "Long",
+// 			}, nil
+// 		}
+// 	}
+
+// 	return nil, nil
+// }
 
 func (s *SignalService) updatePosition(symbol, position, types, key string) {
 	// สร้าง struct Symbol โดยกำหนดค่า symbol, types, และ position
