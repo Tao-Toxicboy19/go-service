@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"order-server/domain"
 	"order-server/services"
 	"time"
@@ -19,7 +18,7 @@ func main() {
 
 	db, err := services.ConnectDB()
 	if err != nil {
-		log.Fatalf("failed to connect database: %v", err)
+		panic(err)
 	}
 
 	// สร้าง instance ของ LevelDBService
