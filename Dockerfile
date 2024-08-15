@@ -14,6 +14,12 @@ FROM alpine:latest
 
 WORKDIR /app
 
+# ติดตั้ง tzdata
+RUN apt-get update && apt-get install -y tzdata
+
+# ตั้งค่า timezone (Optional)
+ENV TZ=Asia/Bangkok
+
 # Copy binary from builder stage
 COPY --from=builder /app/main .
 
