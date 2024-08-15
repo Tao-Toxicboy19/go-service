@@ -34,7 +34,7 @@ func main() {
 	orderServer := services.NewOrderServer(db, levelDB)
 
 	// orderServer.ProcessOrder("5m")
-	c := cron.New(cron.WithSeconds())
+	c := cron.New(cron.WithLocation(getLocation("Asia/Bangkok")))
 	c.AddFunc("0 */5 * * * *", func() {
 		now := time.Now()
 		fmt.Println("Current time:", now.Format("2006-01-02 15:04:05"))
@@ -59,4 +59,13 @@ func main() {
 
 	// Wait indefinitely
 	select {}
+}
+
+func getLocation(timezone string) *time.Location {
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		fmt.Println("Error loading location:", err)
+		return time.UTC // Default to UTC if there's an error
+	}
+	return loc
 }
