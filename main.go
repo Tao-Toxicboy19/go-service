@@ -33,9 +33,8 @@ func main() {
 
 	orderServer := services.NewOrderServer(db, levelDB)
 
-	loc := time.FixedZone("Asia/Bangkok", 7*60*60)
 	// orderServer.ProcessOrder("5m")
-	c := cron.New(cron.WithLocation(loc))
+	c := cron.New(cron.WithSeconds())
 	c.AddFunc("0 */5 * * * *", func() {
 		now := time.Now()
 		fmt.Println("Current time:", now.Format("2006-01-02 15:04:05"))
