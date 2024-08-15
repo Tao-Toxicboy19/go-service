@@ -49,13 +49,11 @@ FROM alpine:latest
 WORKDIR /app
 
 # ติดตั้ง tzdata บน Alpine
-RUN apt-get update && \
-    apt-get install -yq tzdata && \
-    ln -fs /usr/share/zoneinfo/Asia/Bangkok /etc/localtime && \
-    dpkg-reconfigure -f noninteractive tzdata
+RUN apk add --no-cache tzdata
 
-# ตั้งค่า timezone (Optional)
+# ตั้งค่า timezone เป็น Asia/Bangkok
 ENV TZ=Asia/Bangkok
+RUN cp /usr/share/zoneinfo/Asia/Bangkok /etc/localtime && echo "Asia/Bangkok" > /etc/timezone
 
 # Copy binary from builder stage
 COPY --from=builder /app/main .
