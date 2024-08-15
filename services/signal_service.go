@@ -122,10 +122,10 @@ func (s *SignalService) signalEMA(symbol, timeframe string, ema int) (*Position,
 		return nil, err
 	}
 
-	if posi == nil {
-		fmt.Println("posi is nil")
-		return nil, fmt.Errorf("posi is nil")
-	}
+	// if posi == nil {
+	// 	fmt.Println("posi is nil")
+	// 	return nil, fmt.Errorf("posi is nil")
+	// }
 
 	if prevEMA.ema > prevEMA.lastPrice {
 		s.updatePosition(symbol, "Short", "EMA", key)
