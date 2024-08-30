@@ -142,10 +142,10 @@ func (s *SignalService) signalEMA(symbol, timeframe string, ema int) (*Position,
 			}, nil
 		}
 	}
-	return nil, nil
-	// return &Position{
-	// 	position: "Short",
-	// }, nil
+
+	return &Position{
+		position: "",
+	}, nil
 }
 
 // func (s *SignalService) signalCDC(symbol, timeframe string) (*Position, error) {
